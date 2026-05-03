@@ -1370,11 +1370,17 @@ $('menu-btn').onclick = () => {
       <button class="menu-item" onclick="window.__showMembers()">
         <span class="icon">🏡</span> 그룹 멤버 보기
       </button>
+      <button class="menu-item" onclick="window.__renameGroup()">
+        <span class="icon">✏️</span> 그룹 이름 수정
+      </button>
       <button class="menu-item" onclick="window.__openGuide()">
         <span class="icon">❓</span> 사용 방법 (사용자용)
       </button>
       <button class="menu-item" onclick="window.__changeGroup()">
         <span class="icon">🔄</span> 다른 그룹으로 전환
+      </button>
+      <button class="menu-item" onclick="window.__leaveGroup()">
+        <span class="icon">🚶</span> 이 그룹 나가기
       </button>
       <button class="menu-item danger" onclick="window.__logout()">
         <span class="icon">🚪</span> 로그아웃
@@ -1417,24 +1423,39 @@ window.__copyInvite = async (link) => {
 
 window.__showMembers = () => {
   const members = currentGroupData?.members || {};
+  const isOwner = members[currentUser.uid]?.role === 'owner';
   const html = `
     <div style="font-size:14px; color:#334155; margin-bottom:12px;">
-      <strong>${currentGroupData?.name}</strong> 그룹의 멤버들이에요
+      <strong>${escapeHtml(currentGroupData?.name)}</strong> 그룹의 멤버들이에요
     </div>
     <div>
       ${Object.entries(members).map(([uid, m]) => `
         <div style="display:flex; align-items:center; gap:12px; padding:12px; border-bottom:1px solid #f1f5f9;">
           ${m.photo ? `<img src="${m.photo}" style="width:40px;height:40px;border-radius:50%;">` : '<div style="width:40px;height:40px;border-radius:50%;background:#cbd5e0;"></div>'}
           <div style="flex:1;">
-            <div style="font-weight:600;">${escapeHtml(m.name)}</div>
+            <div style="font-weight:600;">${escapeHtml(m.name)}${uid === currentUser.uid ? ' <span style="color:#0ea5e9; font-size:12px;">(나)</span>' : ''}</div>
             <div style="font-size:12px; color:#64748b;">${escapeHtml(m.email || '')}</div>
           </div>
           ${m.role === 'owner' ? '<span style="font-size:11px; background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:8px;">방장</span>' : ''}
+          ${(isOwner && uid !== currentUser.uid) ? `<button class="icon-btn" style="width:32px; height:32px; font-size:14px;" onclick="window.__kickMember('${uid}')" title="내보내기">✕</button>` : ''}
         </div>
       `).join('')}
     </div>
+    ${isOwner ? '<div class="field-help" style="margin-top:12px;">💡 방장은 멤버 옆 ✕ 버튼으로 멤버를 내보낼 수 있어요</div>' : ''}
   `;
   openModal('그룹 멤버', html);
+};
+
+window.__kickMember = async (uid) => {
+  const memberName = currentGroupData?.members?.[uid]?.name || '이 멤버';
+  if (!confirm(`${memberName}님을 그룹에서 내보낼까요?`)) return;
+  try {
+    await remove(ref(db, `groups/${currentGroupId}/members/${uid}`));
+    toast('내보냈어요');
+    setTimeout(() => window.__showMembers(), 200);
+  } catch (e) {
+    toast('실패: ' + e.message);
+  }
 };
 
 window.__changeGroup = async () => {
@@ -1478,6 +1499,80 @@ window.__doSwitchGroup = async (gid) => {
   await switchToGroup(gid);
   hideLoading();
   toast('그룹이 전환됐어요');
+};
+
+window.__renameGroup = () => {
+  const html = `
+    <div class="field">
+      <label>그룹 이름</label>
+      <input id="rename-input" value="${escapeHtml(currentGroupData?.name || '')}" placeholder="새 이름">
+      <div class="field-help">언제든지 다시 변경할 수 있어요</div>
+    </div>
+  `;
+  const footer = `
+    <button class="btn btn-secondary" onclick="document.querySelector('.modal-overlay').remove()">취소</button>
+    <button class="btn btn-primary" id="confirm-rename">변경</button>
+  `;
+  openModal('그룹 이름 수정', html, footer);
+  setTimeout(() => $('rename-input').focus(), 100);
+  $('confirm-rename').onclick = async () => {
+    const newName = $('rename-input').value.trim();
+    if (!newName) { toast('이름을 입력하세요'); return; }
+    showLoading();
+    try {
+      await update(ref(db, `groups/${currentGroupId}`), { name: newName });
+      hideLoading();
+      closeModal();
+      toast('변경됐어요');
+    } catch (e) {
+      hideLoading();
+      toast('실패: ' + e.message);
+    }
+  };
+};
+
+window.__leaveGroup = async () => {
+  const memberCount = Object.keys(currentGroupData?.members || {}).length;
+  const isOwner = currentGroupData?.members?.[currentUser.uid]?.role === 'owner';
+
+  let warning = '';
+  if (isOwner && memberCount > 1) {
+    warning = '\n\n⚠️ 방장이 나가면 다른 멤버가 자동으로 방장이 돼요.';
+  } else if (memberCount === 1) {
+    warning = '\n\n⚠️ 마지막 멤버가 나가면 그룹과 모든 여행 기록이 영구 삭제돼요!';
+  }
+
+  if (!confirm(`"${currentGroupData?.name}" 그룹에서 나갈까요?${warning}`)) return;
+
+  showLoading();
+  try {
+    if (memberCount === 1) {
+      // 마지막 멤버 → 그룹 통째로 삭제
+      await remove(ref(db, `groups/${currentGroupId}`));
+    } else {
+      // 자기만 나가기
+      await remove(ref(db, `groups/${currentGroupId}/members/${currentUser.uid}`));
+      // 방장이었으면 다른 멤버를 방장으로
+      if (isOwner) {
+        const otherMembers = Object.entries(currentGroupData.members).filter(([uid]) => uid !== currentUser.uid);
+        if (otherMembers.length > 0) {
+          await update(ref(db, `groups/${currentGroupId}/members/${otherMembers[0][0]}`), { role: 'owner' });
+        }
+      }
+    }
+    await remove(ref(db, `users/${currentUser.uid}/currentGroup`));
+    hideLoading();
+    closeModal();
+    toast('그룹에서 나왔어요');
+    cleanupListeners();
+    currentGroupId = null;
+    currentGroupData = null;
+    tripsCache = {};
+    showFirstTimeWelcome();
+  } catch (e) {
+    hideLoading();
+    toast('실패: ' + e.message);
+  }
 };
 
 window.__logout = async () => {
