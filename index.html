@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Travel Memory">
+<meta name="theme-color" content="#0ea5e9">
+<title>Travel Memory</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    background: #f5f7fa;
+    color: #1a202c;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-top: env(safe-area-inset-top);
+  }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; }
+  input, textarea, select { font-family: inherit; font-size: 16px; }
+
+  /* ===== 공통 ===== */
+  .hidden { display: none !important; }
+  .container { max-width: 600px; margin: 0 auto; padding: 16px; }
+
+  /* ===== 로그인 화면 ===== */
+  #login-screen {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+    color: white;
+    padding: 24px;
+    text-align: center;
+  }
+  #login-screen .logo { font-size: 80px; margin-bottom: 16px; }
+  #login-screen h1 { font-size: 36px; margin: 0 0 8px; font-weight: 700; }
+  #login-screen .subtitle { font-size: 16px; opacity: 0.9; margin-bottom: 48px; }
+  .google-btn {
+    background: white;
+    color: #444;
+    padding: 14px 32px;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .google-btn img { width: 20px; height: 20px; }
+
+  /* ===== 헤더 ===== */
+  .header {
+    background: white;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e2e8f0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding-top: calc(12px + env(safe-area-inset-top));
+  }
+  .header h1 {
+    font-size: 20px;
+    margin: 0;
+    font-weight: 700;
+    color: #0ea5e9;
+  }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: #4a5568;
+  }
+  .icon-btn:active { background: #e2e8f0; }
+  .user-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #cbd5e0;
+  }
+
+  /* ===== 그룹 표시 ===== */
+  .group-bar {
+    background: #fef3c7;
+    padding: 8px 16px;
+    font-size: 13px;
+    text-align: center;
+    color: #92400e;
+    border-bottom: 1px solid #fde68a;
+  }
+  .group-bar strong { color: #78350f; }
+
+  /* ===== 탭 네비 (하단) ===== */
+  .tab-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 100;
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 10px 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 500;
+    transition: color 0.15s;
+  }
+  .tab-btn .tab-icon { font-size: 22px; }
+  .tab-btn.active { color: #0ea5e9; }
+
+  /* ===== 메인 ===== */
+  .main { min-height: calc(100vh - 64px); padding-bottom: 80px; }
+
+  /* ===== 빈 상태 ===== */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #64748b;
+  }
+  .empty-state .icon { font-size: 64px; margin-bottom: 16px; }
+  .empty-state .title { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #334155; }
+  .empty-state .desc { font-size: 14px; line-height: 1.6; }
+  .empty-state .help-link {
+    color: #0ea5e9;
+    text-decoration: underline;
+    margin-top: 12px;
+    display: inline-block;
+    font-weight: 600;
+  }
+
+  /* ===== 여행 카드 ===== */
+  .trip-card {
+    background: white;
+    border-radius: 16px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  .trip-card:active { transform: scale(0.98); }
+  .trip-card-cover {
+    height: 120px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 64px;
+  }
+  .trip-card-cover.future { background: linear-gradient(135deg, #a78bfa, #8b5cf6); }
+  .trip-card-body { padding: 16px; }
+  .trip-card-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: #1e293b;
+  }
+  .trip-card-meta {
+    font-size: 13px;
+    color: #64748b;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .trip-card-meta span { display: inline-flex; align-items: center; gap: 4px; }
+  .trip-rating { color: #f59e0b; }
+
+  /* ===== FAB (플로팅 추가 버튼) ===== */
+  .fab {
+    position: fixed;
+    bottom: 80px;
+    right: 16px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: #0ea5e9;
+    color: white;
+    font-size: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px rgba(14, 165, 233, 0.4);
+    z-index: 50;
+    margin-bottom: env(safe-area-inset-bottom);
+  }
+  .fab:active { transform: scale(0.92); }
+
+  /* ===== 모달 ===== */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: flex-end;
+    z-index: 200;
+    animation: fadeIn 0.2s;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal {
+    background: white;
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+    border-radius: 20px 20px 0 0;
+    max-height: 92vh;
+    overflow-y: auto;
+    animation: slideUp 0.25s ease-out;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-header {
+    padding: 16px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 1;
+  }
+  .modal-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
+  .modal-body { padding: 16px; }
+  .modal-footer {
+    padding: 12px 16px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    gap: 8px;
+    position: sticky;
+    bottom: 0;
+    background: white;
+  }
+
+  /* ===== 폼 ===== */
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #334155;
+  }
+  .field input, .field textarea, .field select {
+    width: 100%;
+    padding: 12px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 16px;
+    background: #f8fafc;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus {
+    outline: none;
+    border-color: #0ea5e9;
+    background: white;
+  }
+  .field textarea { min-height: 80px; resize: vertical; }
+  .field-help {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 4px;
+  }
+  .field-row { display: flex; gap: 8px; }
+  .field-row > .field { flex: 1; }
+
+  /* ===== 버튼 ===== */
+  .btn {
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: #0ea5e9;
+    color: white;
+    flex: 1;
+  }
+  .btn-primary:active { background: #0284c7; }
+  .btn-secondary {
+    background: #f1f5f9;
+    color: #475569;
+  }
+  .btn-secondary:active { background: #e2e8f0; }
+  .btn-danger { background: #fee2e2; color: #dc2626; }
+  .btn-block { width: 100%; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ===== 상세 화면 ===== */
+  .trip-detail-header {
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: white;
+    padding: 24px 16px;
+    padding-top: calc(24px + env(safe-area-inset-top));
+  }
+  .trip-detail-header.future { background: linear-gradient(135deg, #a78bfa, #8b5cf6); }
+  .trip-detail-emoji { font-size: 48px; margin-bottom: 8px; }
+  .trip-detail-title { font-size: 24px; font-weight: 700; margin: 0 0 4px; }
+  .trip-detail-meta { font-size: 14px; opacity: 0.95; }
+  .trip-detail-section {
+    background: white;
+    margin: 12px;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* ===== 사진 보기 ===== */
+  .photo-link-card {
+    background: #f0f9ff;
+    border: 2px solid #bae6fd;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .photo-link-card:active { background: #e0f2fe; }
+  .photo-link-card .icon { font-size: 48px; margin-bottom: 8px; }
+  .photo-link-card .title { font-weight: 700; color: #0369a1; margin-bottom: 4px; font-size: 16px; }
+  .photo-link-card .desc { font-size: 13px; color: #0284c7; }
+
+  .empty-photos {
+    background: #f8fafc;
+    border: 2px dashed #cbd5e0;
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    color: #64748b;
+    font-size: 14px;
+  }
+
+  /* ===== 일자별 메모 ===== */
+  .day-entry {
+    border-left: 3px solid #0ea5e9;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    background: #f8fafc;
+    border-radius: 0 8px 8px 0;
+  }
+  .day-entry-date {
+    font-weight: 700;
+    color: #0369a1;
+    font-size: 13px;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .day-entry-content { font-size: 14px; color: #334155; white-space: pre-wrap; }
+  .day-entry-author { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+
+  /* ===== 별점 ===== */
+  .stars { font-size: 24px; cursor: pointer; user-select: none; }
+  .stars span { transition: transform 0.1s; display: inline-block; }
+  .stars span:active { transform: scale(1.3); }
+  .stars .filled { color: #f59e0b; }
+  .stars .empty { color: #cbd5e0; }
+
+  /* ===== 가이드 ===== */
+  .guide-step {
+    background: white;
+    margin: 12px;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .guide-step-num {
+    display: inline-block;
+    background: #0ea5e9;
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 28px;
+    font-weight: 700;
+    margin-right: 8px;
+  }
+  .guide-step h3 {
+    font-size: 17px;
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+  }
+  .guide-step ol, .guide-step ul {
+    padding-left: 20px;
+    line-height: 1.8;
+    font-size: 14px;
+    color: #334155;
+  }
+  .guide-step .tip {
+    background: #fef3c7;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #78350f;
+    margin-top: 12px;
+  }
+
+  /* ===== 토스트 ===== */
+  .toast {
+    position: fixed;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1e293b;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 24px;
+    font-size: 14px;
+    z-index: 300;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    animation: toastIn 0.25s;
+  }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translate(-50%, 20px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+  }
+
+  /* ===== 로딩 ===== */
+  .loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(255,255,255,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 500;
+  }
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #e2e8f0;
+    border-top-color: #0ea5e9;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ===== 지도 (간단 표현) ===== */
+  .map-placeholder {
+    background: #e0f2fe;
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    color: #0369a1;
+    margin: 12px;
+  }
+  .country-list {
+    margin: 12px;
+  }
+  .country-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .country-card .name { font-weight: 700; font-size: 16px; }
+  .country-card .count { font-size: 13px; color: #64748b; }
+
+  /* ===== 메뉴 시트 ===== */
+  .menu-list { padding: 8px; }
+  .menu-item {
+    width: 100%;
+    text-align: left;
+    padding: 16px;
+    font-size: 16px;
+    color: #1e293b;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .menu-item:active { background: #f1f5f9; }
+  .menu-item .icon { font-size: 22px; }
+  .menu-item.danger { color: #dc2626; }
+
+  /* 큰 글씨 모드용 (사용자 친화) */
+  .big-action {
+    background: #0ea5e9;
+    color: white;
+    padding: 16px;
+    border-radius: 12px;
+    font-size: 17px;
+    font-weight: 700;
+    width: 100%;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .big-action:active { background: #0284c7; }
+
+  /* 멤버 칩 */
+  .member-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f1f5f9;
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 13px;
+    margin: 2px;
+  }
+  .member-chip img {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+  }
+
+  /* 초대 링크 박스 */
+  .invite-box {
+    background: #f0f9ff;
+    border: 1.5px dashed #0ea5e9;
+    border-radius: 12px;
+    padding: 16px;
+    word-break: break-all;
+    font-size: 13px;
+    color: #0369a1;
+    font-family: monospace;
+    margin: 12px 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================ -->
+<!-- 로그인 화면 -->
+<!-- ============================================ -->
+<div id="login-screen">
+  <div class="logo">✈️</div>
+  <h1>Travel Memory</h1>
+  <div class="subtitle">우리의 여행 추억을 한 곳에</div>
+  <button class="google-btn" id="login-btn">
+    <img src="https://www.google.com/favicon.ico" alt="">
+    Google로 시작하기
+  </button>
+</div>
+
+<!-- ============================================ -->
+<!-- 메인 앱 -->
+<!-- ============================================ -->
+<div id="app" class="hidden">
+
+  <!-- 헤더 -->
+  <div class="header">
+    <h1>✈️ Travel Memory</h1>
+    <div class="header-actions">
+      <button class="icon-btn" id="menu-btn" title="메뉴">⋮</button>
+    </div>
+  </div>
+
+  <!-- 그룹 표시 -->
+  <div class="group-bar" id="group-bar">
+    <strong id="group-name">그룹 없음</strong> <span id="group-members"></span>
+  </div>
+
+  <!-- 메인 콘텐츠 -->
+  <div class="main">
+
+    <!-- 탭1: 다녀온 여행 (타임라인) -->
+    <div id="tab-timeline" class="tab-content">
+      <div class="container" id="trips-list-past"></div>
+    </div>
+
+    <!-- 탭2: 지도 (지역별) -->
+    <div id="tab-map" class="tab-content hidden">
+      <div class="map-placeholder">
+        🗺️<br>
+        <strong style="font-size:18px; display:block; margin-top:8px;">지역별 모아보기</strong>
+        <small>나라/도시별로 여행을 정리해서 봐요</small>
+      </div>
+      <div class="country-list" id="country-list"></div>
+    </div>
+
+    <!-- 탭3: 갈 곳 (위시리스트) -->
+    <div id="tab-future" class="tab-content hidden">
+      <div class="container" id="trips-list-future"></div>
+    </div>
+
+  </div>
+
+  <!-- FAB -->
+  <button class="fab" id="add-trip-btn" title="여행 추가">+</button>
+
+  <!-- 하단 탭 -->
+  <div class="tab-nav">
+    <button class="tab-btn active" data-tab="timeline">
+      <div class="tab-icon">📅</div>
+      <div>다녀온 곳</div>
+    </button>
+    <button class="tab-btn" data-tab="map">
+      <div class="tab-icon">🗺️</div>
+      <div>지역별</div>
+    </button>
+    <button class="tab-btn" data-tab="future">
+      <div class="tab-icon">✈️</div>
+      <div>갈 곳</div>
+    </button>
+  </div>
+
+</div>
+
+<!-- ============================================ -->
+<!-- 모달들이 여기 들어감 (동적 생성) -->
+<!-- ============================================ -->
+<div id="modal-container"></div>
+
+<!-- ============================================ -->
+<!-- 토스트 -->
+<!-- ============================================ -->
+<div id="toast-container"></div>
+
+<!-- ============================================ -->
+<!-- 로딩 -->
+<!-- ============================================ -->
+<div id="loading" class="loading-overlay hidden">
+  <div class="spinner"></div>
+</div>
+
+<!-- ============================================ -->
+<!-- Firebase + 앱 코드 -->
+<!-- ============================================ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+  getRedirectResult, onAuthStateChanged, signOut
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import {
+  getDatabase, ref, set, get, push, update, remove, onValue, off, child, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// ===== Firebase 설정 =====
+const firebaseConfig = {
+  apiKey: "AIzaSyCyOY0wBFOicEzywz4w_OGw5m9c6jebA4o",
+  authDomain: "travel-memory-f2c5d.firebaseapp.com",
+  databaseURL: "https://travel-memory-f2c5d-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "travel-memory-f2c5d",
+  storageBucket: "travel-memory-f2c5d.firebasestorage.app",
+  messagingSenderId: "790536857400",
+  appId: "1:790536857400:web:0a2086489bf79d47e603cd"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+const provider = new GoogleAuthProvider();
+
+// ===== 전역 상태 =====
+let currentUser = null;
+let currentGroupId = null;
+let currentGroupData = null;
+let tripsCache = {};
+let tripsListener = null;
+let groupListener = null;
+
+// ===== DOM 헬퍼 =====
+const $ = (id) => document.getElementById(id);
+const create = (tag, props = {}, children = []) => {
+  const el = document.createElement(tag);
+  Object.entries(props).forEach(([k, v]) => {
+    if (k === 'class') el.className = v;
+    else if (k === 'html') el.innerHTML = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v);
+  });
+  children.forEach(c => el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
+  return el;
+};
+
+const showLoading = () => $('loading').classList.remove('hidden');
+const hideLoading = () => $('loading').classList.add('hidden');
+
+const toast = (msg) => {
+  const t = create('div', { class: 'toast' }, [msg]);
+  $('toast-container').appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+};
+
+// ===== 모달 시스템 =====
+const closeModal = () => {
+  const m = $('modal-container').querySelector('.modal-overlay');
+  if (m) m.remove();
+};
+const openModal = (title, bodyHtml, footer = null) => {
+  closeModal();
+  const overlay = create('div', { class: 'modal-overlay', onclick: (e) => { if (e.target === overlay) closeModal(); } });
+  const modal = create('div', { class: 'modal' });
+  const header = create('div', { class: 'modal-header' });
+  header.innerHTML = `<h2>${title}</h2><button class="icon-btn" onclick="document.querySelector('.modal-overlay').remove()">✕</button>`;
+  const body = create('div', { class: 'modal-body' });
+  body.innerHTML = bodyHtml;
+  modal.appendChild(header);
+  modal.appendChild(body);
+  if (footer) {
+    const f = create('div', { class: 'modal-footer' });
+    f.innerHTML = footer;
+    modal.appendChild(f);
+  }
+  overlay.appendChild(modal);
+  $('modal-container').appendChild(overlay);
+  return { overlay, modal, body };
+};
+
+// ===== 인증 =====
+$('login-btn').onclick = async () => {
+  showLoading();
+  try {
+    // 모바일은 redirect, 데스크톱은 popup
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      await signInWithRedirect(auth, provider);
+    } else {
+      await signInWithPopup(auth, provider);
+      hideLoading();
+    }
+  } catch (e) {
+    hideLoading();
+    console.error(e);
+    toast('로그인 실패: ' + e.message);
+  }
+};
+
+// 리다이렉트 후 처리
+getRedirectResult(auth).catch(e => console.error('redirect error', e));
+
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    currentUser = user;
+    $('login-screen').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    showLoading();
+    await loadUserAndGroup();
+    hideLoading();
+  } else {
+    currentUser = null;
+    cleanupListeners();
+    $('login-screen').classList.remove('hidden');
+    $('app').classList.add('hidden');
+  }
+});
+
+// ===== 사용자/그룹 로드 =====
+async function loadUserAndGroup() {
+  // 1) 사용자 정보 저장
+  await set(ref(db, `users/${currentUser.uid}`), {
+    name: currentUser.displayName || '익명',
+    email: currentUser.email,
+    photo: currentUser.photoURL || '',
+    lastLogin: serverTimestamp()
+  });
+
+  // 2) URL에서 초대 코드 확인
+  const params = new URLSearchParams(window.location.search);
+  const inviteGroupId = params.get('join');
+  if (inviteGroupId) {
+    await joinGroup(inviteGroupId);
+    // URL 정리
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+
+  // 3) 사용자가 속한 그룹 가져오기
+  const userGroupSnap = await get(ref(db, `users/${currentUser.uid}/currentGroup`));
+  let groupId = userGroupSnap.val();
+
+  if (!groupId) {
+    // 그룹 없으면 새로 만들기
+    showFirstTimeWelcome();
+    return;
+  }
+
+  await switchToGroup(groupId);
+}
+
+async function switchToGroup(groupId) {
+  cleanupListeners();
+  currentGroupId = groupId;
+  await set(ref(db, `users/${currentUser.uid}/currentGroup`), groupId);
+
+  // 그룹 데이터 실시간 구독
+  groupListener = onValue(ref(db, `groups/${groupId}`), (snap) => {
+    currentGroupData = snap.val();
+    if (currentGroupData) {
+      renderGroupBar();
+    }
+  });
+
+  // 여행 데이터 실시간 구독
+  tripsListener = onValue(ref(db, `groups/${groupId}/trips`), (snap) => {
+    tripsCache = snap.val() || {};
+    renderAll();
+  });
+}
+
+function cleanupListeners() {
+  if (tripsListener) { off(ref(db, `groups/${currentGroupId}/trips`)); tripsListener = null; }
+  if (groupListener) { off(ref(db, `groups/${currentGroupId}`)); groupListener = null; }
+}
+
+// ===== 첫 사용자 환영 =====
+function showFirstTimeWelcome() {
+  const html = `
+    <p style="font-size:15px; line-height:1.7; color:#334155;">
+      처음 오셨네요! 환영합니다 🎉<br><br>
+      Travel Memory는 <strong>가족·친구와 함께</strong> 여행 추억을 모으는 앱이에요.
+    </p>
+    <div style="margin: 20px 0;">
+      <button class="big-action" onclick="window.__createGroup()">
+        🏡 새 그룹 만들기
+      </button>
+      <p class="field-help" style="text-align:center;">
+        이미 초대받으셨다면 받은 링크를 사파리에서 열어주세요
+      </p>
+    </div>
+  `;
+  openModal('환영합니다 ✈️', html);
+}
+
+window.__createGroup = async () => {
+  closeModal();
+  const html = `
+    <div class="field">
+      <label>그룹 이름</label>
+      <input id="group-name-input" placeholder="예: 우리 가족, 친구들 모임">
+      <div class="field-help">3-4명이 함께 여행 추억을 공유할 그룹 이름이에요</div>
+    </div>
+  `;
+  const footer = `
+    <button class="btn btn-secondary" onclick="document.querySelector('.modal-overlay').remove()">취소</button>
+    <button class="btn btn-primary" id="confirm-create-group">만들기</button>
+  `;
+  openModal('새 그룹 만들기', html, footer);
+  setTimeout(() => $('group-name-input').focus(), 100);
+  $('confirm-create-group').onclick = async () => {
+    const name = $('group-name-input').value.trim();
+    if (!name) { toast('그룹 이름을 입력하세요'); return; }
+    showLoading();
+    try {
+      const newGroupRef = push(ref(db, 'groups'));
+      const groupId = newGroupRef.key;
+      await set(newGroupRef, {
+        name,
+        createdAt: serverTimestamp(),
+        createdBy: currentUser.uid,
+        members: {
+          [currentUser.uid]: {
+            name: currentUser.displayName || '익명',
+            email: currentUser.email,
+            photo: currentUser.photoURL || '',
+            joinedAt: serverTimestamp(),
+            role: 'owner'
+          }
+        }
+      });
+      await switchToGroup(groupId);
+      hideLoading();
+      closeModal();
+      toast('그룹이 만들어졌어요! 🎉');
+    } catch (e) {
+      hideLoading();
+      console.error(e);
+      toast('실패: ' + e.message);
+    }
+  };
+};
+
+async function joinGroup(groupId) {
+  try {
+    const snap = await get(ref(db, `groups/${groupId}`));
+    if (!snap.exists()) { toast('초대 링크가 유효하지 않아요'); return; }
+    await update(ref(db, `groups/${groupId}/members/${currentUser.uid}`), {
+      name: currentUser.displayName || '익명',
+      email: currentUser.email,
+      photo: currentUser.photoURL || '',
+      joinedAt: serverTimestamp(),
+      role: 'member'
+    });
+    await set(ref(db, `users/${currentUser.uid}/currentGroup`), groupId);
+    toast('그룹에 참여했어요! 🎉');
+  } catch (e) {
+    console.error(e);
+    toast('참여 실패: ' + e.message);
+  }
+}
+
+// ===== 그룹바 표시 =====
+function renderGroupBar() {
+  $('group-name').textContent = currentGroupData?.name || '그룹';
+  const members = currentGroupData?.members || {};
+  const count = Object.keys(members).length;
+  $('group-members').textContent = `· 멤버 ${count}명`;
+}
+
+// ===== 탭 전환 =====
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    $(`tab-${btn.dataset.tab}`).classList.remove('hidden');
+  };
+});
+
+// ===== 여행 카드 렌더링 =====
+function renderAll() {
+  renderTimeline();
+  renderCountries();
+  renderFuture();
+}
+
+function tripsArray() {
+  return Object.entries(tripsCache).map(([id, t]) => ({ id, ...t }));
+}
+
+function isFutureTrip(trip) {
+  if (!trip.startDate) return false;
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  return new Date(trip.startDate) > today;
+}
+
+function getEmoji(trip) {
+  return trip.emoji || '✈️';
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  const date = new Date(d);
+  return `${date.getFullYear()}.${String(date.getMonth()+1).padStart(2,'0')}.${String(date.getDate()).padStart(2,'0')}`;
+}
+
+function formatPeriod(start, end) {
+  if (!start && !end) return '';
+  if (start && !end) return formatDate(start);
+  if (start === end) return formatDate(start);
+  return `${formatDate(start)} ~ ${formatDate(end)}`;
+}
+
+function renderTripCard(trip, isFuture) {
+  const card = create('div', { class: 'trip-card', onclick: () => openTripDetail(trip.id) });
+  const cover = create('div', { class: `trip-card-cover ${isFuture ? 'future' : ''}` }, [getEmoji(trip)]);
+
+  const body = create('div', { class: 'trip-card-body' });
+  const title = create('div', { class: 'trip-card-title' }, [trip.title || '제목 없음']);
+  const meta = create('div', { class: 'trip-card-meta' });
+
+  const period = formatPeriod(trip.startDate, trip.endDate);
+  if (period) meta.appendChild(create('span', {}, [`📅 ${period}`]));
+  if (trip.location) meta.appendChild(create('span', {}, [`📍 ${trip.location}`]));
+  if (trip.rating && !isFuture) {
+    const stars = '★'.repeat(trip.rating) + '☆'.repeat(5 - trip.rating);
+    meta.appendChild(create('span', { class: 'trip-rating' }, [stars]));
+  }
+
+  body.appendChild(title);
+  body.appendChild(meta);
+  card.appendChild(cover);
+  card.appendChild(body);
+  return card;
+}
+
+function renderTimeline() {
+  const list = $('trips-list-past');
+  list.innerHTML = '';
+  const past = tripsArray()
+    .filter(t => !isFutureTrip(t))
+    .sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
+
+  if (past.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">📷</div>
+        <div class="title">아직 추억이 없어요</div>
+        <div class="desc">아래 + 버튼을 눌러<br>첫 여행을 추가해보세요</div>
+      </div>`;
+    return;
+  }
+  past.forEach(t => list.appendChild(renderTripCard(t, false)));
+}
+
+function renderFuture() {
+  const list = $('trips-list-future');
+  list.innerHTML = '';
+  const future = tripsArray()
+    .filter(t => isFutureTrip(t))
+    .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+
+  if (future.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🌍</div>
+        <div class="title">가고 싶은 곳을 적어보세요</div>
+        <div class="desc">+ 버튼으로 미래 여행을 추가하면<br>여기에 보여요</div>
+      </div>`;
+    return;
+  }
+  future.forEach(t => list.appendChild(renderTripCard(t, true)));
+}
+
+function renderCountries() {
+  const list = $('country-list');
+  list.innerHTML = '';
+  const trips = tripsArray().filter(t => !isFutureTrip(t));
+
+  // 지역별 그룹화
+  const byCountry = {};
+  trips.forEach(t => {
+    const c = (t.country || t.location || '미분류').trim() || '미분류';
+    if (!byCountry[c]) byCountry[c] = [];
+    byCountry[c].push(t);
+  });
+
+  if (Object.keys(byCountry).length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🗺️</div>
+        <div class="title">여행을 추가하면 여기 모여요</div>
+        <div class="desc">나라별로 자동으로 정리돼요</div>
+      </div>`;
+    return;
+  }
+
+  Object.entries(byCountry)
+    .sort((a, b) => b[1].length - a[1].length)
+    .forEach(([country, list_trips]) => {
+      const card = create('div', { class: 'country-card', onclick: () => showCountryTrips(country, list_trips) });
+      card.innerHTML = `
+        <div>
+          <div class="name">📍 ${country}</div>
+          <div class="count">${list_trips.length}번의 여행</div>
+        </div>
+        <div style="font-size:24px; color:#cbd5e0;">›</div>
+      `;
+      list.appendChild(card);
+    });
+}
+
+function showCountryTrips(country, trips) {
+  const html = `<div id="country-trips-list"></div>`;
+  openModal(`📍 ${country}`, html);
+  const container = $('country-trips-list');
+  trips.sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
+  trips.forEach(t => container.appendChild(renderTripCard(t, false)));
+}
+
+// ===== 여행 추가/편집 =====
+$('add-trip-btn').onclick = () => openTripForm();
+
+function openTripForm(trip = null) {
+  const isEdit = !!trip;
+  const t = trip || {};
+  const html = `
+    <div class="field">
+      <label>이모지 (선택)</label>
+      <input id="f-emoji" value="${t.emoji || ''}" placeholder="✈️ 🗼 🏖️ 🍜" maxlength="4">
+    </div>
+    <div class="field">
+      <label>여행 제목 *</label>
+      <input id="f-title" value="${t.title || ''}" placeholder="예: 도쿄 가족 여행">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>나라/지역</label>
+        <input id="f-country" value="${t.country || ''}" placeholder="일본">
+      </div>
+      <div class="field">
+        <label>도시 (선택)</label>
+        <input id="f-location" value="${t.location || ''}" placeholder="도쿄">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>시작일</label>
+        <input id="f-start" type="date" value="${t.startDate || ''}">
+      </div>
+      <div class="field">
+        <label>종료일</label>
+        <input id="f-end" type="date" value="${t.endDate || ''}">
+      </div>
+    </div>
+    <div class="field">
+      <label>📷 iCloud 공유 앨범 링크</label>
+      <input id="f-photo-url" value="${t.photoUrl || ''}" placeholder="https://www.icloud.com/sharedalbum/...">
+      <div class="field-help">사진 앱에서 공유 앨범 만들고 "공개 웹사이트" 링크를 여기에 붙여넣으세요. <a href="#" onclick="event.preventDefault(); window.__openGuide()">사용법 보기</a></div>
+    </div>
+    <div class="field">
+      <label>동행자 (선택)</label>
+      <input id="f-companions" value="${t.companions || ''}" placeholder="엄마, 아빠, 동생">
+    </div>
+    <div class="field">
+      <label>한줄평 (선택)</label>
+      <input id="f-summary" value="${t.summary || ''}" placeholder="단풍이 정말 예뻤다">
+    </div>
+    ${!isFutureFormCheck(t) ? `
+    <div class="field">
+      <label>별점</label>
+      <div class="stars" id="f-stars" data-value="${t.rating || 0}"></div>
+    </div>` : ''}
+  `;
+  const footer = `
+    ${isEdit ? '<button class="btn btn-danger" id="delete-trip">삭제</button>' : ''}
+    <button class="btn btn-secondary" onclick="document.querySelector('.modal-overlay').remove()">취소</button>
+    <button class="btn btn-primary" id="save-trip">저장</button>
+  `;
+  openModal(isEdit ? '여행 수정' : '새 여행 추가', html, footer);
+
+  // 별점 렌더
+  const starsEl = $('f-stars');
+  if (starsEl) {
+    const renderStars = (v) => {
+      starsEl.innerHTML = '';
+      for (let i = 1; i <= 5; i++) {
+        const s = create('span', { class: i <= v ? 'filled' : 'empty' }, [i <= v ? '★' : '☆']);
+        s.onclick = () => { starsEl.dataset.value = i; renderStars(i); };
+        starsEl.appendChild(s);
+      }
+    };
+    renderStars(parseInt(starsEl.dataset.value) || 0);
+  }
+
+  $('save-trip').onclick = async () => {
+    const data = {
+      emoji: $('f-emoji').value.trim() || '✈️',
+      title: $('f-title').value.trim(),
+      country: $('f-country').value.trim(),
+      location: $('f-location').value.trim(),
+      startDate: $('f-start').value || null,
+      endDate: $('f-end').value || null,
+      photoUrl: $('f-photo-url').value.trim(),
+      companions: $('f-companions').value.trim(),
+      summary: $('f-summary').value.trim(),
+      rating: parseInt(starsEl?.dataset.value || 0),
+      updatedAt: serverTimestamp(),
+      updatedBy: currentUser.uid
+    };
+    if (!data.title) { toast('제목을 입력하세요'); return; }
+    showLoading();
+    try {
+      if (isEdit) {
+        await update(ref(db, `groups/${currentGroupId}/trips/${trip.id}`), data);
+        toast('수정됐어요');
+      } else {
+        data.createdAt = serverTimestamp();
+        data.createdBy = currentUser.uid;
+        const newRef = push(ref(db, `groups/${currentGroupId}/trips`));
+        await set(newRef, data);
+        toast('추가됐어요!');
+      }
+      hideLoading();
+      closeModal();
+    } catch (e) {
+      hideLoading();
+      console.error(e);
+      toast('저장 실패: ' + e.message);
+    }
+  };
+
+  if (isEdit) {
+    $('delete-trip').onclick = async () => {
+      if (!confirm(`"${trip.title}" 여행을 삭제할까요?\n메모와 사진 링크도 모두 사라져요.`)) return;
+      showLoading();
+      try {
+        await remove(ref(db, `groups/${currentGroupId}/trips/${trip.id}`));
+        hideLoading();
+        closeModal();
+        toast('삭제됐어요');
+      } catch (e) {
+        hideLoading();
+        toast('삭제 실패: ' + e.message);
+      }
+    };
+  }
+}
+
+function isFutureFormCheck(t) {
+  if (!t.startDate) return false;
+  return new Date(t.startDate) > new Date();
+}
+
+// ===== 여행 상세 =====
+window.__openTripDetail = (id) => openTripDetail(id);
+function openTripDetail(tripId) {
+  const trip = { id: tripId, ...tripsCache[tripId] };
+  if (!trip.title) return;
+  const isFuture = isFutureTrip(trip);
+
+  const period = formatPeriod(trip.startDate, trip.endDate);
+  const photoSection = trip.photoUrl ? `
+    <div class="photo-link-card" onclick="window.open('${trip.photoUrl}', '_blank')">
+      <div class="icon">📷</div>
+      <div class="title">사진 모두 보기</div>
+      <div class="desc">iCloud 공유 앨범에서 열기 →</div>
+    </div>
+  ` : `
+    <div class="empty-photos">
+      📷 사진 링크가 아직 없어요<br>
+      <small>편집 버튼으로 iCloud 공유 앨범 링크를 추가해보세요</small>
+    </div>
+  `;
+
+  const dayEntries = trip.dayEntries || {};
+  const dayEntriesHtml = Object.entries(dayEntries)
+    .sort((a, b) => (b[1].date || '').localeCompare(a[1].date || ''))
+    .map(([key, entry]) => {
+      const author = currentGroupData?.members?.[entry.author]?.name || '';
+      return `
+        <div class="day-entry">
+          <div class="day-entry-date">
+            <span>📅 ${formatDate(entry.date)}</span>
+            <button class="icon-btn" style="width:28px;height:28px;font-size:14px;" onclick="window.__deleteDayEntry('${tripId}', '${key}')">🗑</button>
+          </div>
+          <div class="day-entry-content">${escapeHtml(entry.content)}</div>
+          ${author ? `<div class="day-entry-author">— ${escapeHtml(author)}</div>` : ''}
+        </div>
+      `;
+    }).join('') || '<div style="font-size:13px; color:#94a3b8; text-align:center; padding:16px;">아직 메모가 없어요</div>';
+
+  const html = `
+    <div style="margin: -16px;">
+      <div class="trip-detail-header ${isFuture ? 'future' : ''}">
+        <div class="trip-detail-emoji">${getEmoji(trip)}</div>
+        <h2 class="trip-detail-title">${escapeHtml(trip.title)}</h2>
+        <div class="trip-detail-meta">
+          ${period ? `📅 ${period}` : ''}
+          ${trip.location ? `<br>📍 ${escapeHtml(trip.location)}${trip.country ? `, ${escapeHtml(trip.country)}` : ''}` : (trip.country ? `<br>📍 ${escapeHtml(trip.country)}` : '')}
+          ${trip.companions ? `<br>👥 ${escapeHtml(trip.companions)}` : ''}
+          ${trip.rating ? `<br>${'★'.repeat(trip.rating)}${'☆'.repeat(5-trip.rating)}` : ''}
+        </div>
+      </div>
+
+      <div class="trip-detail-section">
+        <h3 class="section-title">📷 사진</h3>
+        ${photoSection}
+      </div>
+
+      ${trip.summary ? `
+      <div class="trip-detail-section">
+        <h3 class="section-title">💭 한줄평</h3>
+        <div style="font-size:15px; color:#334155;">${escapeHtml(trip.summary)}</div>
+      </div>` : ''}
+
+      <div class="trip-detail-section">
+        <h3 class="section-title">
+          📝 일자별 메모
+          <button class="btn btn-secondary" style="margin-left:auto; padding:6px 12px; font-size:13px;" onclick="window.__addDayEntry('${tripId}')">+ 추가</button>
+        </h3>
+        <div id="day-entries-list">${dayEntriesHtml}</div>
+      </div>
+
+      <div style="padding: 16px;">
+        <button class="btn btn-primary btn-block" onclick="window.__editTrip('${tripId}')">✏️ 편집</button>
+      </div>
+    </div>
+  `;
+  openModal(' ', html);
+}
+
+window.__editTrip = (tripId) => {
+  const trip = { id: tripId, ...tripsCache[tripId] };
+  closeModal();
+  setTimeout(() => openTripForm(trip), 100);
+};
+
+window.__addDayEntry = (tripId) => {
+  const today = new Date().toISOString().split('T')[0];
+  const html = `
+    <div class="field">
+      <label>날짜</label>
+      <input id="day-date" type="date" value="${today}">
+    </div>
+    <div class="field">
+      <label>오늘 있었던 일</label>
+      <textarea id="day-content" placeholder="예: 기요미즈데라 단풍 미쳤음. 저녁에 우동집 갔는데 진짜 맛있었다." style="min-height:120px;"></textarea>
+    </div>
+  `;
+  const footer = `
+    <button class="btn btn-secondary" onclick="document.querySelector('.modal-overlay').remove()">취소</button>
+    <button class="btn btn-primary" id="save-day">저장</button>
+  `;
+  openModal('일자별 메모 추가', html, footer);
+  setTimeout(() => $('day-content').focus(), 100);
+  $('save-day').onclick = async () => {
+    const content = $('day-content').value.trim();
+    const date = $('day-date').value;
+    if (!content) { toast('내용을 입력하세요'); return; }
+    showLoading();
+    try {
+      const newRef = push(ref(db, `groups/${currentGroupId}/trips/${tripId}/dayEntries`));
+      await set(newRef, {
+        date,
+        content,
+        author: currentUser.uid,
+        createdAt: serverTimestamp()
+      });
+      hideLoading();
+      closeModal();
+      toast('메모 추가됐어요');
+      // 상세 다시 열기
+      setTimeout(() => openTripDetail(tripId), 200);
+    } catch (e) {
+      hideLoading();
+      toast('실패: ' + e.message);
+    }
+  };
+};
+
+window.__deleteDayEntry = async (tripId, entryKey) => {
+  if (!confirm('이 메모를 삭제할까요?')) return;
+  try {
+    await remove(ref(db, `groups/${currentGroupId}/trips/${tripId}/dayEntries/${entryKey}`));
+    toast('삭제됐어요');
+    setTimeout(() => openTripDetail(tripId), 100);
+  } catch (e) {
+    toast('실패: ' + e.message);
+  }
+};
+
+// ===== 메뉴 =====
+$('menu-btn').onclick = () => {
+  const html = `
+    <div class="menu-list">
+      <button class="menu-item" onclick="window.__inviteMembers()">
+        <span class="icon">👥</span> 친구 초대하기
+      </button>
+      <button class="menu-item" onclick="window.__showMembers()">
+        <span class="icon">🏡</span> 그룹 멤버 보기
+      </button>
+      <button class="menu-item" onclick="window.__openGuide()">
+        <span class="icon">❓</span> 사용 방법 (사용자용)
+      </button>
+      <button class="menu-item" onclick="window.__changeGroup()">
+        <span class="icon">🔄</span> 다른 그룹으로 전환
+      </button>
+      <button class="menu-item danger" onclick="window.__logout()">
+        <span class="icon">🚪</span> 로그아웃
+      </button>
+    </div>
+  `;
+  openModal('메뉴', html);
+};
+
+window.__inviteMembers = () => {
+  const link = `${window.location.origin}${window.location.pathname}?join=${currentGroupId}`;
+  const html = `
+    <p style="font-size:14px; color:#334155;">
+      아래 링크를 친구·가족에게 카톡이나 문자로 보내주세요.<br>
+      링크를 받은 분이 사파리에서 열고 Google 로그인하면 자동으로 같은 그룹에 들어와요.
+    </p>
+    <div class="invite-box" id="invite-link">${link}</div>
+    <button class="btn btn-primary btn-block" onclick="window.__copyInvite('${link}')">📋 링크 복사</button>
+    <p class="field-help" style="margin-top:12px;">
+      💡 받는 분은 사파리에서 이 링크를 열어야 해요. 다른 브라우저에서는 잘 안 될 수 있어요.
+    </p>
+  `;
+  openModal('친구 초대하기', html);
+};
+
+window.__copyInvite = async (link) => {
+  try {
+    await navigator.clipboard.writeText(link);
+    toast('링크가 복사됐어요!');
+  } catch (e) {
+    // 폴백: 텍스트 선택
+    const range = document.createRange();
+    range.selectNode($('invite-link'));
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    document.execCommand('copy');
+    toast('링크가 복사됐어요!');
+  }
+};
+
+window.__showMembers = () => {
+  const members = currentGroupData?.members || {};
+  const html = `
+    <div style="font-size:14px; color:#334155; margin-bottom:12px;">
+      <strong>${currentGroupData?.name}</strong> 그룹의 멤버들이에요
+    </div>
+    <div>
+      ${Object.entries(members).map(([uid, m]) => `
+        <div style="display:flex; align-items:center; gap:12px; padding:12px; border-bottom:1px solid #f1f5f9;">
+          ${m.photo ? `<img src="${m.photo}" style="width:40px;height:40px;border-radius:50%;">` : '<div style="width:40px;height:40px;border-radius:50%;background:#cbd5e0;"></div>'}
+          <div style="flex:1;">
+            <div style="font-weight:600;">${escapeHtml(m.name)}</div>
+            <div style="font-size:12px; color:#64748b;">${escapeHtml(m.email || '')}</div>
+          </div>
+          ${m.role === 'owner' ? '<span style="font-size:11px; background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:8px;">방장</span>' : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+  openModal('그룹 멤버', html);
+};
+
+window.__changeGroup = async () => {
+  // 사용자가 속한 모든 그룹 조회
+  showLoading();
+  try {
+    const allGroupsSnap = await get(ref(db, 'groups'));
+    const all = allGroupsSnap.val() || {};
+    const myGroups = Object.entries(all).filter(([id, g]) => g.members && g.members[currentUser.uid]);
+    hideLoading();
+
+    const html = `
+      <div style="font-size:14px; color:#334155; margin-bottom:12px;">
+        속한 그룹 중 하나를 선택하세요
+      </div>
+      ${myGroups.map(([id, g]) => `
+        <div class="trip-card" onclick="window.__doSwitchGroup('${id}')" style="margin-bottom:8px;">
+          <div class="trip-card-body">
+            <div class="trip-card-title">${escapeHtml(g.name)}</div>
+            <div class="trip-card-meta">
+              <span>👥 ${Object.keys(g.members).length}명</span>
+              ${id === currentGroupId ? '<span style="color:#0ea5e9; font-weight:600;">현재 사용 중</span>' : ''}
+            </div>
+          </div>
+        </div>
+      `).join('')}
+      <div style="margin-top:16px;">
+        <button class="big-action" onclick="window.__createGroup()">+ 새 그룹 만들기</button>
+      </div>
+    `;
+    openModal('그룹 전환', html);
+  } catch (e) {
+    hideLoading();
+    toast('오류: ' + e.message);
+  }
+};
+
+window.__doSwitchGroup = async (gid) => {
+  closeModal();
+  showLoading();
+  await switchToGroup(gid);
+  hideLoading();
+  toast('그룹이 전환됐어요');
+};
+
+window.__logout = async () => {
+  if (!confirm('로그아웃할까요?')) return;
+  await signOut(auth);
+};
+
+// ===== 가이드 =====
+window.__openGuide = () => {
+  const html = `
+    <div style="background:#fef3c7; padding:12px; border-radius:8px; margin-bottom:16px; font-size:14px; color:#78350f;">
+      💡 이 가이드를 사용자분께 보여드리세요. 또는 화면을 캡처해서 보내주셔도 좋아요.
+    </div>
+
+    <div class="guide-step">
+      <h3><span class="guide-step-num">1</span>iCloud 공유 앨범 켜기 (처음 한 번만)</h3>
+      <ol>
+        <li><strong>설정</strong> 앱 열기</li>
+        <li>맨 위 <strong>본인 이름</strong> 누르기</li>
+        <li><strong>iCloud</strong> 누르기</li>
+        <li><strong>사진</strong> 누르기</li>
+        <li><strong>공유 앨범</strong> 토글을 <strong>켜기</strong></li>
+      </ol>
+    </div>
+
+    <div class="guide-step">
+      <h3><span class="guide-step-num">2</span>여행마다 공유 앨범 만들기</h3>
+      <ol>
+        <li><strong>사진</strong> 앱 열기</li>
+        <li>아래 <strong>앨범</strong> 탭 누르기</li>
+        <li>오른쪽 위 <strong>+</strong> 버튼 → <strong>새로운 공유 앨범</strong></li>
+        <li>여행 이름 입력 (예: "도쿄 2026.05") → <strong>다음</strong></li>
+        <li>(혼자 쓰면 그냥) <strong>만들기</strong> 누르기</li>
+      </ol>
+      <div class="tip">💡 같이 여행 가는 사람이 있으면 여기서 그 사람도 추가하세요. 그러면 둘 다 사진을 추가할 수 있어요!</div>
+    </div>
+
+    <div class="guide-step">
+      <h3><span class="guide-step-num">3</span>"공개 웹사이트" 켜고 링크 받기</h3>
+      <ol>
+        <li>방금 만든 <strong>공유 앨범</strong> 열기</li>
+        <li>오른쪽 위 <strong>···</strong> (점 3개) 누르기</li>
+        <li><strong>공유 앨범 세부정보</strong> 누르기</li>
+        <li><strong>공개 웹사이트</strong> 토글 <strong>켜기</strong></li>
+        <li>아래 <strong>링크 공유</strong> 누르기 → <strong>복사</strong></li>
+      </ol>
+      <div class="tip">⚠️ "공개 웹사이트"를 켜야 Travel Memory 앱에서 사진을 볼 수 있어요. 켜도 링크 아는 사람만 보여요.</div>
+    </div>
+
+    <div class="guide-step">
+      <h3><span class="guide-step-num">4</span>Travel Memory 앱에 링크 붙여넣기</h3>
+      <ol>
+        <li>Travel Memory 앱에서 <strong>+ 버튼</strong> 누르기</li>
+        <li>여행 정보 입력</li>
+        <li><strong>iCloud 공유 앨범 링크</strong> 칸에 복사한 링크 붙여넣기</li>
+        <li><strong>저장</strong> 누르기</li>
+      </ol>
+    </div>
+
+    <div class="guide-step">
+      <h3><span class="guide-step-num">5</span>매일 사진 추가하기</h3>
+      <ol>
+        <li><strong>사진</strong> 앱 열기</li>
+        <li>오늘 찍은 사진 여러 개 선택 (꾹 눌러서 드래그)</li>
+        <li>왼쪽 아래 <strong>공유 버튼</strong> 누르기</li>
+        <li><strong>공유 앨범에 추가</strong> 누르기</li>
+        <li>방금 만든 <strong>여행 앨범</strong> 선택하기</li>
+        <li>끝! 자동으로 Travel Memory에서 보여요</li>
+      </ol>
+    </div>
+
+    <div class="guide-step">
+      <h3><span class="guide-step-num">6</span>홈 화면에 앱 아이콘 추가</h3>
+      <ol>
+        <li>사파리에서 Travel Memory 페이지 열기</li>
+        <li>아래쪽 <strong>공유 버튼</strong> (□↑) 누르기</li>
+        <li>아래로 스크롤 → <strong>홈 화면에 추가</strong></li>
+        <li><strong>추가</strong> 누르기</li>
+      </ol>
+      <div class="tip">💡 이렇게 하면 일반 앱처럼 아이콘 누르면 바로 열려요!</div>
+    </div>
+  `;
+  openModal('📖 사용 방법', html);
+};
+
+// ===== 유틸 =====
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// ===== 외부 노출 =====
+window.openTripDetail = openTripDetail;
+</script>
+
+</body>
+</html>
