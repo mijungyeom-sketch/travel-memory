@@ -835,11 +835,15 @@ async function switchToGroup(groupId) {
     tripsCache = snap.val() || {};
     renderAll();
   });
+
+  // 도시 정보 실시간 구독
+  loadCityInfoForGroup(groupId);
 }
 
 function cleanupListeners() {
   if (tripsListener) { off(ref(db, `groups/${currentGroupId}/trips`)); tripsListener = null; }
   if (groupListener) { off(ref(db, `groups/${currentGroupId}`)); groupListener = null; }
+  if (cityInfoListener) { off(ref(db, `groups/${currentGroupId}/cityInfo`)); cityInfoListener = null; }
 }
 
 // ===== 첫 사용자 환영 =====
@@ -1047,32 +1051,41 @@ function renderCountries() {
   list.innerHTML = '';
   const trips = tripsArray().filter(t => !isFutureTrip(t));
 
-  // 지역별 그룹화
-  const byCountry = {};
+  // 도시별 그룹화 (location의 첫 도시 기준)
+  const byCity = {};
   trips.forEach(t => {
-    const c = (t.country || t.location || '미분류').trim() || '미분류';
-    if (!byCountry[c]) byCountry[c] = [];
-    byCountry[c].push(t);
+    // location에 여러 도시가 있으면 모두 따로 그룹화 (예: "삿포로, 후라노" → 삿포로 + 후라노)
+    const cities = (t.location || t.country || '미분류').split(',').map(c => c.trim()).filter(c => c);
+    if (cities.length === 0) cities.push('미분류');
+    cities.forEach(city => {
+      if (!byCity[city]) byCity[city] = [];
+      byCity[city].push(t);
+    });
   });
 
-  if (Object.keys(byCountry).length === 0) {
+  if (Object.keys(byCity).length === 0) {
     list.innerHTML = `
       <div class="empty-state">
         <div class="icon">🗺️</div>
         <div class="title">여행을 추가하면 여기 모여요</div>
-        <div class="desc">나라별로 자동으로 정리돼요</div>
+        <div class="desc">도시별로 자동으로 정리돼요</div>
       </div>`;
     return;
   }
 
-  Object.entries(byCountry)
+  Object.entries(byCity)
     .sort((a, b) => b[1].length - a[1].length)
-    .forEach(([country, list_trips]) => {
-      const card = create('div', { class: 'country-card', onclick: () => showCountryTrips(country, list_trips) });
+    .forEach(([city, list_trips]) => {
+      const info = getCityInfo(city);
+      const card = create('div', { class: 'country-card', onclick: () => showCountryTrips(city, list_trips) });
+      const emoji = info?.emoji || '📍';
       card.innerHTML = `
-        <div>
-          <div class="name">📍 ${country}</div>
-          <div class="count">${list_trips.length}번의 여행</div>
+        <div style="flex:1;">
+          <div class="name">${emoji} ${escapeHtml(city)}</div>
+          <div class="count">
+            ${info?.country ? `<span style="color:#92400e;">${escapeHtml(info.country)}</span> · ` : ''}
+            ${list_trips.length}번 방문
+          </div>
         </div>
         <div style="font-size:24px; color:#cbd5e0;">›</div>
       `;
@@ -1080,12 +1093,78 @@ function renderCountries() {
     });
 }
 
-function showCountryTrips(country, trips) {
-  const html = `<div id="country-trips-list"></div>`;
-  openModal(`📍 ${country}`, html);
+async function showCountryTrips(country, trips) {
+  // 도시명만 추출 (예: "도쿄, 일본" → "도쿄")
+  const cityName = country.split(',')[0].trim();
+  let info = getCityInfo(cityName);
+
+  // 정보 없으면 AI에게 생성 요청
+  let generating = false;
+  if (!info) {
+    generating = true;
+  }
+
+  let infoHtml;
+  if (info) {
+    infoHtml = `
+      <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); border-radius: 12px; padding: 16px; margin-bottom: 16px; position: relative;">
+        <button class="icon-btn" style="position:absolute; top:8px; right:8px; width:32px; height:32px; font-size:14px; background:rgba(255,255,255,0.7);" onclick="window.__editCityInfo('${escapeHtml(cityName).replace(/'/g, "\\'")}')" title="편집">✏️</button>
+        <div style="font-size: 32px; margin-bottom: 4px;">${info.emoji || '📍'}</div>
+        <div style="font-size: 13px; color: #78350f; margin-bottom: 8px; font-weight: 600;">📍 ${escapeHtml(info.country || '')}</div>
+        <div style="font-size: 14px; color: #78350f; line-height: 1.6; margin-bottom: 10px;">${escapeHtml(info.desc || '')}</div>
+        ${info.spots ? `
+        <div style="background: rgba(255,255,255,0.6); padding: 10px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #92400e; font-weight: 700; margin-bottom: 4px;">🌟 유명한 곳</div>
+          <div style="font-size: 13px; color: #78350f;">${escapeHtml(info.spots)}</div>
+        </div>` : ''}
+        ${info.generated ? '<div style="font-size:10px; color:#92400e; margin-top:8px; opacity:0.7;">🤖 AI가 작성</div>' : ''}
+      </div>
+    `;
+  } else {
+    infoHtml = `
+      <div id="ai-generating-box" style="background: linear-gradient(135deg, #dbeafe, #bfdbfe); border-radius: 12px; padding: 20px; margin-bottom: 16px; text-align:center;">
+        <div class="spinner" style="margin: 0 auto 12px;"></div>
+        <div style="font-size: 14px; color: #1e40af; font-weight: 600;">🤖 AI가 ${escapeHtml(cityName)} 정보를 만들고 있어요</div>
+        <div style="font-size: 12px; color: #3b82f6; margin-top: 4px;">잠시만 기다려주세요...</div>
+      </div>
+    `;
+  }
+
+  const html = `
+    <div id="city-info-section">${infoHtml}</div>
+    <div style="font-size: 13px; color: #64748b; margin-bottom: 8px; font-weight: 600;">
+      📅 다녀온 여행 (${trips.length}회)
+    </div>
+    <div id="country-trips-list"></div>
+  `;
+  openModal(`📍 ${cityName}`, html);
   const container = $('country-trips-list');
   trips.sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
   trips.forEach(t => container.appendChild(renderTripCard(t, false)));
+
+  // AI 정보 생성 (백그라운드)
+  if (generating) {
+    const newInfo = await generateCityInfo(cityName);
+    if (newInfo && document.getElementById('city-info-section')) {
+      // 모달이 아직 열려있으면 새 정보로 업데이트
+      const newHtml = `
+        <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); border-radius: 12px; padding: 16px; margin-bottom: 16px; position: relative;">
+          <button class="icon-btn" style="position:absolute; top:8px; right:8px; width:32px; height:32px; font-size:14px; background:rgba(255,255,255,0.7);" onclick="window.__editCityInfo('${escapeHtml(cityName).replace(/'/g, "\\'")}')" title="편집">✏️</button>
+          <div style="font-size: 32px; margin-bottom: 4px;">${newInfo.emoji || '📍'}</div>
+          <div style="font-size: 13px; color: #78350f; margin-bottom: 8px; font-weight: 600;">📍 ${escapeHtml(newInfo.country || '')}</div>
+          <div style="font-size: 14px; color: #78350f; line-height: 1.6; margin-bottom: 10px;">${escapeHtml(newInfo.desc || '')}</div>
+          ${newInfo.spots ? `
+          <div style="background: rgba(255,255,255,0.6); padding: 10px; border-radius: 8px;">
+            <div style="font-size: 12px; color: #92400e; font-weight: 700; margin-bottom: 4px;">🌟 유명한 곳</div>
+            <div style="font-size: 13px; color: #78350f;">${escapeHtml(newInfo.spots)}</div>
+          </div>` : ''}
+          ${newInfo.generated ? '<div style="font-size:10px; color:#92400e; margin-top:8px; opacity:0.7;">🤖 AI가 작성 — 편집 가능</div>' : ''}
+        </div>
+      `;
+      const section = document.getElementById('city-info-section');
+      if (section) section.innerHTML = newHtml;
+    }
+  }
 }
 
 // ===== 여행 추가/편집 =====
@@ -1193,6 +1272,8 @@ function openTripForm(trip = null) {
       }
       hideLoading();
       closeModal();
+      // 백그라운드에서 도시 정보 자동 생성 (사용자 안 기다림)
+      autoGenerateCityInfoForTrip(data);
     } catch (e) {
       hideLoading();
       console.error(e);
@@ -1366,6 +1447,9 @@ $('menu-btn').onclick = () => {
     <div class="menu-list">
       <button class="menu-item" onclick="window.__inviteMembers()">
         <span class="icon">👥</span> 친구 초대하기
+      </button>
+      <button class="menu-item" onclick="window.__bulkImport()">
+        <span class="icon">📦</span> 여행 23개 한꺼번에 추가
       </button>
       <button class="menu-item" onclick="window.__showMembers()">
         <span class="icon">🏡</span> 그룹 멤버 보기
@@ -1656,6 +1740,331 @@ window.__openGuide = () => {
     </div>
   `;
   openModal('📖 사용 방법', html);
+};
+
+// ===== AI 도시 정보 자동 생성 =====
+// Firebase에 저장된 도시 정보 캐시
+let cityInfoCache = {};
+let cityInfoListener = null;
+
+// 그룹 데이터 로드할 때 도시 정보도 같이 로드
+async function loadCityInfoForGroup(groupId) {
+  if (cityInfoListener) off(ref(db, `groups/${groupId}/cityInfo`));
+  cityInfoListener = onValue(ref(db, `groups/${groupId}/cityInfo`), (snap) => {
+    cityInfoCache = snap.val() || {};
+    // 도시 정보 바뀌면 지역별 탭 다시 그리기
+    if (currentGroupId === groupId) renderCountries();
+  });
+}
+
+// 도시명을 안전한 키로 변환 (특수문자 제거)
+function cityKey(name) {
+  return name.replace(/[.#$\/\[\]]/g, '_').trim();
+}
+
+// 도시 정보 가져오기 (Firebase 우선 → 내장 데이터 → AI 생성)
+function getCityInfo(cityName) {
+  if (!cityName) return null;
+  const key = cityKey(cityName);
+  // 1. Firebase 사용자 정의 정보
+  if (cityInfoCache[key]) return cityInfoCache[key];
+  // 2. 내장 데이터
+  if (CITY_INFO[cityName]) return CITY_INFO[cityName];
+  return null;
+}
+
+// AI로 도시 정보 생성
+async function generateCityInfo(cityName) {
+  if (!cityName || !currentGroupId) return null;
+  const key = cityKey(cityName);
+
+  // 이미 있으면 스킵
+  if (cityInfoCache[key]) return cityInfoCache[key];
+  if (CITY_INFO[cityName]) return CITY_INFO[cityName];
+
+  // 진행 중 표시 (다른 인스턴스가 또 생성 시도 안 하도록)
+  await set(ref(db, `groups/${currentGroupId}/cityInfo/${key}`), {
+    generating: true,
+    requestedAt: Date.now()
+  });
+
+  try {
+    const prompt = `"${cityName}"이라는 여행지에 대해 다음 형식의 JSON으로만 답변해줘. 다른 말 일절 하지 말고 JSON만.
+
+{
+  "country": "이 도시가 속한 나라 (한글)",
+  "emoji": "그 나라 국기 이모지 1개",
+  "desc": "이 도시에 대한 매력적인 한 줄 소개 (60자 내외, 한글). 시적이고 매력적으로",
+  "spots": "이 도시의 가장 유명한 관광지 5-6개를 쉼표로 구분 (한글, 현지 발음을 한글로)"
+}
+
+만약 "${cityName}"이 도시가 아니거나 모르는 곳이면, country를 "알 수 없음"으로, 나머지는 빈 문자열로 답해.`;
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+
+    if (!response.ok) throw new Error('API error: ' + response.status);
+    const data = await response.json();
+
+    // 응답에서 JSON 추출
+    let text = data.content
+      .filter(c => c.type === 'text')
+      .map(c => c.text)
+      .join('');
+    text = text.replace(/```json|```/g, '').trim();
+
+    const info = JSON.parse(text);
+
+    if (info.country === '알 수 없음' || !info.desc) {
+      // 모르는 도시면 임시로 빈 정보 저장 (반복 시도 방지)
+      const fallback = {
+        country: '🌍 새로운 곳',
+        emoji: '✈️',
+        desc: `${cityName}에 대한 자세한 정보는 직접 추가해보세요!`,
+        spots: '직접 입력해주세요',
+        generated: true,
+        cityName,
+        generatedAt: Date.now()
+      };
+      await set(ref(db, `groups/${currentGroupId}/cityInfo/${key}`), fallback);
+      return fallback;
+    }
+
+    const result = {
+      country: info.country,
+      emoji: info.emoji,
+      desc: info.desc,
+      spots: info.spots,
+      generated: true,
+      cityName,
+      generatedAt: Date.now()
+    };
+
+    await set(ref(db, `groups/${currentGroupId}/cityInfo/${key}`), result);
+    return result;
+
+  } catch (e) {
+    console.error('도시 정보 생성 실패:', e);
+    // 실패 시 generating 플래그 제거
+    await remove(ref(db, `groups/${currentGroupId}/cityInfo/${key}`));
+    return null;
+  }
+}
+
+// 여행에 등장하는 모든 도시에 대해 자동 생성 (백그라운드)
+async function autoGenerateCityInfoForTrip(trip) {
+  const cities = (trip.location || '').split(',').map(c => c.trim()).filter(c => c);
+  for (const city of cities) {
+    const key = cityKey(city);
+    // 이미 있으면 스킵
+    if (cityInfoCache[key] || CITY_INFO[city]) continue;
+    // 백그라운드에서 비동기 생성 (await 안 함)
+    generateCityInfo(city).catch(e => console.log('백그라운드 생성 스킵:', city));
+  }
+}
+
+// 도시 정보 직접 편집 (사용자가 수정 가능)
+window.__editCityInfo = (cityName) => {
+  const key = cityKey(cityName);
+  const info = cityInfoCache[key] || CITY_INFO[cityName] || {};
+
+  const html = `
+    <div class="field">
+      <label>도시 이름</label>
+      <input value="${escapeHtml(cityName)}" disabled style="background:#f1f5f9;">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>나라</label>
+        <input id="ci-country" value="${escapeHtml(info.country || '')}" placeholder="일본">
+      </div>
+      <div class="field">
+        <label>이모지 (국기)</label>
+        <input id="ci-emoji" value="${escapeHtml(info.emoji || '')}" placeholder="🇯🇵" maxlength="4">
+      </div>
+    </div>
+    <div class="field">
+      <label>도시 설명</label>
+      <textarea id="ci-desc" placeholder="이 도시는 어떤 곳인가요?">${escapeHtml(info.desc || '')}</textarea>
+    </div>
+    <div class="field">
+      <label>유명한 곳 (쉼표로 구분)</label>
+      <textarea id="ci-spots" placeholder="관광지1, 관광지2, ...">${escapeHtml(info.spots || '')}</textarea>
+    </div>
+    <button class="btn btn-secondary btn-block" id="regenerate-ai" style="margin-top:8px;">
+      🤖 AI로 다시 생성하기
+    </button>
+  `;
+  const footer = `
+    <button class="btn btn-secondary" onclick="document.querySelector('.modal-overlay').remove()">취소</button>
+    <button class="btn btn-primary" id="save-city-info">저장</button>
+  `;
+  openModal(`📍 ${cityName} 정보 편집`, html, footer);
+
+  $('regenerate-ai').onclick = async () => {
+    if (!confirm('AI에게 다시 물어볼까요? 기존 내용이 사라집니다.')) return;
+    showLoading();
+    // 기존 정보 삭제
+    await remove(ref(db, `groups/${currentGroupId}/cityInfo/${key}`));
+    // 새로 생성
+    const newInfo = await generateCityInfo(cityName);
+    hideLoading();
+    if (newInfo) {
+      $('ci-country').value = newInfo.country || '';
+      $('ci-emoji').value = newInfo.emoji || '';
+      $('ci-desc').value = newInfo.desc || '';
+      $('ci-spots').value = newInfo.spots || '';
+      toast('AI가 새로 만들었어요');
+    } else {
+      toast('생성 실패. 직접 입력해주세요.');
+    }
+  };
+
+  $('save-city-info').onclick = async () => {
+    const data = {
+      country: $('ci-country').value.trim(),
+      emoji: $('ci-emoji').value.trim() || '📍',
+      desc: $('ci-desc').value.trim(),
+      spots: $('ci-spots').value.trim(),
+      cityName,
+      editedBy: currentUser.uid,
+      editedAt: Date.now()
+    };
+    showLoading();
+    try {
+      await set(ref(db, `groups/${currentGroupId}/cityInfo/${key}`), data);
+      hideLoading();
+      closeModal();
+      toast('저장됐어요');
+    } catch (e) {
+      hideLoading();
+      toast('실패: ' + e.message);
+    }
+  };
+};
+
+// ===== 도시 정보 데이터베이스 =====
+const CITY_INFO = {
+  '멕시코시티': { country: '멕시코', emoji: '🇲🇽', desc: '멕시코의 수도. 아즈텍 문명의 중심지였던 곳으로, 세계에서 가장 큰 광장 중 하나인 소칼로(Zócalo)와 식민지 시대의 메트로폴리탄 대성당이 유명해요.', spots: '소칼로 광장, 메트로폴리탄 대성당, 차풀테펙성, 국립 인류학 박물관, 프리다 칼로 박물관' },
+  '메리다': { country: '멕시코', emoji: '🇲🇽', desc: '유카탄 반도의 백색 도시. 마야 문명 유적인 치첸이트사로 가는 관문 도시이며, 자연 우물 세노테가 유명해요.', spots: '치첸이트사, 익킬 세노테, 욱스말, 메리다 광장' },
+  '이스탄불': { country: '튀르키예', emoji: '🇹🇷', desc: '동서양이 만나는 도시. 비잔틴과 오스만 제국의 수도였던 곳으로 아야 소피아와 블루모스크가 공존해요.', spots: '아야 소피아, 술탄 아흐메트 모스크, 톱카프 궁전, 그랜드 바자르, 갈라타 탑' },
+  '니스': { country: '프랑스', emoji: '🇫🇷', desc: '프랑스 남부 코트다쥐르의 보석. 지중해의 푸른 바다와 영국인의 산책로(Promenade des Anglais)로 유명한 휴양 도시예요.', spots: '영국인의 산책로, 구시가지, 카스텔 언덕, 마세나 광장, 마티스 미술관' },
+  '헬싱키': { country: '핀란드', emoji: '🇫🇮', desc: '발트해의 딸. 핀란드의 수도로 깔끔한 도시 디자인과 사우나 문화로 유명해요. 에스토니아 탈린으로 가는 크루즈가 유명해요.', spots: '헬싱키 대성당, 원로원 광장, 수오멘린나 요새, 시벨리우스 공원' },
+  '탈린': { country: '에스토니아', emoji: '🇪🇪', desc: '중세의 시간이 멈춘 도시. 유네스코 세계문화유산인 구시가지가 잘 보존되어 있어 동화 속 풍경 같아요.', spots: '구시가지, 시청 광장, 알렉산드르 넵스키 대성당, 톰페아 성, 비루 게이트' },
+  '덴버': { country: '미국', emoji: '🇺🇸', desc: '콜로라도주의 주도. 해발 1,609m의 마일하이 시티. 로키산맥 관문 도시로 자연 풍경이 압권이에요.', spots: '레드락 공원, 로키산맥 국립공원, 주의사당, 식물원, 신들의 정원' },
+  '런던': { country: '영국', emoji: '🇬🇧', desc: '템스강이 흐르는 역사와 현대가 공존하는 도시. 빅벤, 버킹엄 궁전, 대영박물관 등 볼거리가 많아요.', spots: '빅벤, 버킹엄 궁전, 대영박물관, 타워브리지, 런던아이, 옥스포드 거리' },
+  '파리': { country: '프랑스', emoji: '🇫🇷', desc: '낭만의 도시. 에펠탑, 루브르, 샹젤리제 거리. 어디를 가나 그림 같은 풍경이 펼쳐져요.', spots: '에펠탑, 루브르 박물관, 개선문, 샹젤리제, 노트르담 대성당, 몽마르트' },
+  '체르마트': { country: '스위스', emoji: '🇨🇭', desc: '마터호른을 만날 수 있는 알프스 마을. 차량 진입이 금지된 청정 휴양지예요.', spots: '마터호른, 고르너그라트 전망대, 수네가 전망대, 리펠제 호수' },
+  '두바이': { country: '아랍에미리트', emoji: '🇦🇪', desc: '사막 위에 솟은 미래도시. 세계 최고층 빌딩 부르즈 할리파와 인공섬 팜 주메이라가 유명해요.', spots: '부르즈 할리파, 두바이 몰, 팜 주메이라, 두바이 분수, 사막 사파리, 두바이 프레임' },
+  '로마': { country: '이탈리아', emoji: '🇮🇹', desc: '모든 길은 로마로 통한다. 2700년 역사의 영원의 도시로 콜로세움과 바티칸 시국이 있어요.', spots: '콜로세움, 바티칸 미술관, 트레비 분수, 판테온, 스페인 광장, 포로 로마노' },
+  '오키나와': { country: '일본', emoji: '🇯🇵', desc: '일본의 하와이. 에메랄드빛 바다와 류큐 왕국의 독특한 문화가 살아있는 휴양지예요.', spots: '슈리성, 추라우미 수족관, 만좌모, 미바루 해변, 아메리칸 빌리지, 케이프 마에다' },
+  '가고시마': { country: '일본', emoji: '🇯🇵', desc: '활화산 사쿠라지마가 있는 규슈 남단의 도시. 메이지 유신의 영웅들을 배출한 역사 도시예요.', spots: '사쿠라지마, 센간엔 정원, 시로야마 전망대, 이부스키 모래찜질' },
+  '구마모토': { country: '일본', emoji: '🇯🇵', desc: '구마몬의 고향. 거대한 칼데라 화산 아소산으로 유명해요.', spots: '구마모토성, 아소산, 구사센리, 다이칸보 전망대, 시라카와 수원' },
+  '교토': { country: '일본', emoji: '🇯🇵', desc: '천년의 고도. 1,000개가 넘는 사찰과 신사, 아름다운 정원이 있어 일본 전통의 정수를 느낄 수 있어요.', spots: '기요미즈데라, 금각사, 후시미 이나리, 아라시야마 대나무숲, 니조성, 철학의 길' },
+  '베네치아': { country: '이탈리아', emoji: '🇮🇹', desc: '물의 도시. 118개 섬이 다리로 연결된 곤돌라의 도시. 산마르코 광장과 리알토 다리가 유명해요.', spots: '산마르코 광장, 리알토 다리, 두칼레 궁전, 무라노 섬, 부라노 섬, 탄식의 다리' },
+  '돌로미티': { country: '이탈리아', emoji: '🇮🇹', desc: '유네스코 세계자연유산. 석회암으로 이뤄진 알프스 산맥. 사진 찍기 좋은 자연 풍경의 끝판왕이에요.', spots: '브라이에스 호수, 트레치메, 세체다, 알페디시우시, 파소 가르데나' },
+  '미야자키': { country: '일본', emoji: '🇯🇵', desc: '규슈 남동부의 신화의 땅. 일본 신화의 무대로 알려진 곳으로, 따뜻한 기후와 야자수 풍경이 인상적이에요.', spots: '아오시마 신사, 도깨비 빨래판, 우도 신궁, 다카치호 협곡, 산멧세 니치난' },
+  '삿포로': { country: '일본', emoji: '🇯🇵', desc: '홋카이도의 중심도시. 눈축제와 라멘, 맥주의 도시로 유명해요.', spots: '오도리 공원, 시계탑, 삿포로 TV타워, 모이와산 전망대, 삿포로 맥주박물관' },
+  '후라노': { country: '일본', emoji: '🇯🇵', desc: '홋카이도의 라벤더 천국. 끝없는 꽃밭과 푸른 호수로 유명한 자연의 보고예요.', spots: '팜 토미타, 청의 호수, 흰수염폭포, 사계채의 언덕, 패치워크의 길' },
+  '마드리드': { country: '스페인', emoji: '🇪🇸', desc: '플라멩코의 열정과 황금세기 미술의 도시. 프라도 미술관에는 벨라스케스, 고야의 걸작이 가득해요.', spots: '프라도 미술관, 마요르 광장, 마드리드 왕궁, 푸에르타 델 솔, 레티로 공원' },
+  '세고비아': { country: '스페인', emoji: '🇪🇸', desc: '로마 시대 수도교가 그대로 남아있는 유네스코 세계유산 도시. 디즈니 신데렐라 성의 모티브가 된 알카사르가 있어요.', spots: '세고비아 수도교, 알카사르, 세고비아 대성당, 마요르 광장' },
+  '고베': { country: '일본', emoji: '🇯🇵', desc: '고베규로 유명한 항구 도시. 야경이 일본 3대 야경 중 하나로 꼽혀요.', spots: '롯코산 야경, 메리켄 파크, 키타노 이진칸, 하버랜드, 아리마 온천' },
+  '아마미오시마': { country: '일본', emoji: '🇯🇵', desc: '오키나와와 가고시마 사이의 보석 같은 섬. 유네스코 세계자연유산. 천연 그대로의 자연이 살아있어요.', spots: '하트 록, 아야마루곶, 마테리야 폭포, 호노호시 해안, 맹그로브 숲' },
+  '아이슬란드': { country: '아이슬란드', emoji: '🇮🇸', desc: '얼음과 불의 나라. 빙하, 폭포, 화산, 오로라까지. 지구가 아닌 듯한 풍경의 끝판왕이에요.', spots: '블루라군, 굴포스 폭포, 게이시르, 씽벨리어 국립공원, 다이아몬드 비치, 요쿨살론' },
+  '오사카': { country: '일본', emoji: '🇯🇵', desc: '먹부림의 도시. 다코야키, 오코노미야키의 본고장. 활기찬 도톤보리 거리가 유명해요.', spots: '도톤보리, 오사카성, 신사이바시, 유니버설 스튜디오, 츠텐카쿠' },
+  '와카야마': { country: '일본', emoji: '🇯🇵', desc: '구마노 고도의 신비로운 영적 순례길. 세계유산 사찰과 산악 풍경이 어우러진 곳이에요.', spots: '쿠마노 나치 타이샤, 나치 폭포, 시라사키 해양공원, 산단베키 절벽, 엔게츠 섬' },
+  '히로시마': { country: '일본', emoji: '🇯🇵', desc: '평화의 도시. 원폭의 아픔을 딛고 일어선 도시로, 이쓰쿠시마 신사의 바다 위 도리이가 유명해요.', spots: '평화기념공원, 원폭 돔, 이쓰쿠시마 신사(미야지마), 히로시마 성, 슈케이엔 정원' },
+  '오카야마': { country: '일본', emoji: '🇯🇵', desc: '맑은 날이 많은 청정한 도시. 일본 3대 정원 중 하나인 코라쿠엔과 흑조성이 유명해요.', spots: '오카야마 코라쿠엔, 오카야마 성, 쿠라시키 미관지구, 나오시마(예술의 섬)' },
+  '시드니': { country: '호주', emoji: '🇦🇺', desc: '오페라하우스의 도시. 호주 최대 도시로 항구와 비치, 도시가 어우러진 풍경이 일품이에요.', spots: '시드니 오페라하우스, 하버 브리지, 본다이 비치, 블루마운틴, 로열 보태닉 가든' },
+  '멜버른': { country: '호주', emoji: '🇦🇺', desc: '예술과 커피의 도시. 그레이트 오션 로드의 출발점이며, 라네웨이의 그래피티와 카페 문화가 유명해요.', spots: '그레이트 오션 로드, 12사도 바위, 페더레이션 광장, 퀸 빅토리아 마켓, 야라강' },
+  '후지산': { country: '일본', emoji: '🇯🇵', desc: '일본의 영산. 해발 3,776m의 일본 최고봉. 카와구치코를 비롯한 후지 5호 주변에서 가장 아름답게 보여요.', spots: '카와구치코, 오시노 핫카이, 후지 스바루 라인 5합목, 야마나카코, 신쿠라사키 공원' },
+  '하코네': { country: '일본', emoji: '🇯🇵', desc: '온천과 후지산 뷰의 명소. 도쿄 근교 최고의 온천 휴양지예요.', spots: '오와쿠다니, 아시노코 호수, 조각의 숲 미술관, 하코네 신사, 토겐다이 전망대' }
+};
+
+// ===== 일괄 가져오기 =====
+const SAMPLE_TRIPS = [
+  { emoji: '🌮', title: '멕시코시티 & 유카탄', country: '멕시코', location: '멕시코시티, 메리다', startDate: '2024-02-29', endDate: '2024-03-05' },
+  { emoji: '🇹🇷', title: '튀르키예 & 프랑스 남부', country: '튀르키예/프랑스', location: '이스탄불, 니스', startDate: '2025-04-25', endDate: '2025-05-02' },
+  { emoji: '🚢', title: '핀란드 & 에스토니아', country: '핀란드/에스토니아', location: '헬싱키, 탈린', startDate: '2023-05-26', endDate: '2023-06-02' },
+  { emoji: '🏔️', title: '콜로라도 로키산맥', country: '미국', location: '덴버', startDate: '2024-06-21', endDate: '2024-06-28' },
+  { emoji: '🇬🇧', title: '런던 여행', country: '영국', location: '런던', startDate: '2018-07-12', endDate: '2018-07-18' },
+  { emoji: '🏔️', title: '스위스 알프스', country: '스위스', location: '파리, 체르마트', startDate: '2019-08-27', endDate: '2019-09-03' },
+  { emoji: '🐪', title: '두바이 투어', country: '아랍에미리트', location: '두바이', startDate: '2022-01-20', endDate: '2022-01-24' },
+  { emoji: '🏛️', title: '로마 & 중부 소도시', country: '이탈리아', location: '로마', startDate: '2024-08-31', endDate: '2024-09-07' },
+  { emoji: '🌮', title: '멕시코시티 재방문', country: '멕시코', location: '멕시코시티', startDate: '2025-01-01', endDate: '2025-01-08' },
+  { emoji: '🏖️', title: '오키나와', country: '일본', location: '오키나와', startDate: '2023-02-09', endDate: '2023-02-12' },
+  { emoji: '🌋', title: '가고시마 & 구마모토', country: '일본', location: '가고시마, 구마모토', startDate: '2024-01-28', endDate: '2024-01-30' },
+  { emoji: '🌸', title: '교토 벚꽃 여행', country: '일본', location: '교토', startDate: '2026-03-26', endDate: '2026-03-29' },
+  { emoji: '⛰️', title: '베네치아 & 돌로미티', country: '이탈리아', location: '베네치아, 돌로미티', startDate: '2025-08-29', endDate: '2025-09-07' },
+  { emoji: '🌺', title: '미야자키', country: '일본', location: '미야자키', startDate: '2024-03-22', endDate: '2024-03-23' },
+  { emoji: '🍜', title: '홋카이도 (삿포로 & 후라노)', country: '일본', location: '삿포로, 후라노', startDate: '2025-10-03', endDate: '2025-10-07' },
+  { emoji: '💃', title: '스페인 (마드리드 & 세고비아)', country: '스페인', location: '마드리드, 세고비아', startDate: '2024-12-07', endDate: '2024-12-14' },
+  { emoji: '🐢', title: '아마미오시마 & 고베', country: '일본', location: '고베, 아마미오시마', startDate: '2026-02-14', endDate: '2026-02-16' },
+  { emoji: '🌋', title: '아이슬란드 일주', country: '아이슬란드', location: '아이슬란드', startDate: '2025-06-27', endDate: '2025-07-04' },
+  { emoji: '🍣', title: '오사카 근교 (와카야마)', country: '일본', location: '오사카, 와카야마', startDate: '2025-02-28', endDate: '2025-03-03' },
+  { emoji: '⛩️', title: '히로시마 & 나오시마', country: '일본', location: '히로시마, 오카야마', startDate: '2024-09-14', endDate: '2024-09-17' },
+  { emoji: '🛫', title: '런던 (첫 방문)', country: '영국', location: '런던', startDate: '2018-02-14', endDate: '2018-02-21' },
+  { emoji: '🦘', title: '호주 (시드니 & 멜버른)', country: '호주', location: '시드니, 멜버른', startDate: '2023-09-22', endDate: '2023-09-30' },
+  { emoji: '🗻', title: '후지산 & 하코네', country: '일본', location: '후지산, 하코네', startDate: '2025-06-05', endDate: '2025-06-08' }
+];
+
+window.__bulkImport = async () => {
+  const html = `
+    <p style="font-size:14px; color:#334155; margin-bottom:12px;">
+      준비된 <strong>23개의 여행</strong>을 한꺼번에 추가할까요?
+    </p>
+    <div style="background:#f0f9ff; padding:12px; border-radius:8px; font-size:13px; color:#0369a1; margin-bottom:12px; max-height:200px; overflow-y:auto;">
+      ${SAMPLE_TRIPS.map(t => `${t.emoji} <strong>${t.title}</strong><br><small style="color:#64748b;">${t.startDate.substring(0,7)} · ${t.location}</small>`).join('<hr style="border:none; border-top:1px solid #e0f2fe; margin:8px 0;">')}
+    </div>
+    <p class="field-help">
+      ⚠️ 도시 설명은 자동으로 추가돼요. 사진 링크는 나중에 직접 추가하세요.
+    </p>
+  `;
+  const footer = `
+    <button class="btn btn-secondary" onclick="document.querySelector('.modal-overlay').remove()">취소</button>
+    <button class="btn btn-primary" id="confirm-import">23개 모두 추가</button>
+  `;
+  openModal('여행 데이터 가져오기', html, footer);
+  $('confirm-import').onclick = async () => {
+    closeModal();
+    showLoading();
+    try {
+      let count = 0;
+      for (const trip of SAMPLE_TRIPS) {
+        const data = {
+          ...trip,
+          rating: 0,
+          summary: '',
+          companions: '',
+          photoUrl: '',
+          createdAt: serverTimestamp(),
+          createdBy: currentUser.uid,
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser.uid
+        };
+        const newRef = push(ref(db, `groups/${currentGroupId}/trips`));
+        await set(newRef, data);
+        count++;
+      }
+      hideLoading();
+      toast(`${count}개 여행이 추가됐어요! 🎉`);
+      // 백그라운드에서 도시 정보 자동 생성 (내장 데이터에 없는 도시만)
+      for (const trip of SAMPLE_TRIPS) {
+        autoGenerateCityInfoForTrip(trip);
+      }
+    } catch (e) {
+      hideLoading();
+      console.error(e);
+      toast('실패: ' + e.message);
+    }
+  };
 };
 
 // ===== 유틸 =====
