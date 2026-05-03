@@ -748,14 +748,47 @@ const openModal = (title, bodyHtml, footer = null) => {
 };
 
 // ===== 인증 =====
+// PWA(홈 화면 앱)인지 감지
+const isPWA = () => {
+  return window.navigator.standalone === true ||
+         window.matchMedia('(display-mode: standalone)').matches;
+};
+
 $('login-btn').onclick = async () => {
   showLoading();
   try {
-    // 모바일은 redirect, 데스크톱은 popup
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (isMobile) {
+    const isIOSPWA = window.navigator.standalone === true;
+
+    if (isIOSPWA) {
+      // iOS PWA는 redirect가 작동 안 함 → 사파리로 보내서 로그인하게 안내
+      hideLoading();
+      const html = `
+        <div style="text-align:center; padding: 20px 10px;">
+          <div style="font-size:48px; margin-bottom:12px;">🌐</div>
+          <p style="font-size:15px; color:#334155; line-height:1.6; margin-bottom:20px;">
+            아이폰 홈 화면 앱에서는<br>
+            <strong>처음 한 번</strong>만 사파리로<br>
+            로그인하셔야 해요.
+          </p>
+          <div style="background:#fef3c7; padding:12px; border-radius:8px; font-size:13px; color:#78350f; margin-bottom:16px; text-align:left;">
+            <strong>방법:</strong><br>
+            1. 아래 "사파리에서 열기" 버튼 누르기<br>
+            2. 사파리에서 Google 로그인하기<br>
+            3. 다시 홈 화면의 Travel Memory 아이콘 누르기<br>
+            4. 자동으로 로그인 됨!
+          </div>
+          <button class="btn btn-primary btn-block" onclick="window.open(window.location.href + '?from_pwa=1', '_blank')">
+            🌐 사파리에서 열기
+          </button>
+        </div>
+      `;
+      openModal('잠깐만요!', html);
+    } else if (isMobile) {
+      // 모바일 사파리/크롬 → redirect
       await signInWithRedirect(auth, provider);
     } else {
+      // 데스크톱 → popup
       await signInWithPopup(auth, provider);
       hideLoading();
     }
